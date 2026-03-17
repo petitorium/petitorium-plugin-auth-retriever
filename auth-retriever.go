@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-plugin"
+	"github.com/petitorium/petitorium-plugin-sdk/shared"
 	"github.com/petitorium/petitorium-plugin-sdk/types"
 )
 
@@ -93,11 +94,14 @@ func (ar *AuthRetriever) Hooks() []types.HookType {
 	return []types.HookType{types.PostReceive}
 }
 
-// HookFuncs returns the hook functions
-func (ar *AuthRetriever) HookFuncs() map[types.HookType]types.PluginHook {
-	return map[types.HookType]types.PluginHook{
-		types.PostReceive: ar.captureAuth,
+// ExecuteHook executes a specific hook with the given context.
+func (ar *AuthRetriever) ExecuteHook(hookType types.HookType, ctx *types.HookContext) (*types.HookContext, error) {
+	switch hookType {
+	case types.PostReceive:
+		err := ar.captureAuth(ctx)
+		return ctx, err
 	}
+	return ctx, nil
 }
 
 // captureAuth captures auth token from responses
@@ -134,59 +138,36 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 
 	// Check if response is successful
 	if ctx.Response != nil {
-		// Use reflection to safely access response data (similar to request-logger)
-		respVal := reflect.ValueOf(ctx.Response)
-		if respVal.Kind() == reflect.Ptr {
-			respVal = respVal.Elem()
-		}
+		statusCode := ctx.Response.StatusCode
+		body := ctx.Response.Body
 
-		if respVal.IsValid() && respVal.Kind() == reflect.Struct {
-			// Try to get StatusCode field
-			var statusCode int
-			if statusField := respVal.FieldByName("StatusCode"); statusField.IsValid() {
-				if statusField.Kind() == reflect.Int {
-					statusCode = int(statusField.Int())
-				}
-			}
-
-			// Try to get Body field
-			var body string
-			if bodyField := respVal.FieldByName("Body"); bodyField.IsValid() {
-				if bodyField.Kind() == reflect.String {
-					body = bodyField.String()
-				}
-			}
-
-			if statusCode == 200 && body != "" {
-				logf(ctx, "[auth-retriever] Processing auth response from %s %s (status %d), body length: %d", ctx.Request.Method, ctx.Request.URL, statusCode, len(body))
-				// Try to parse JSON response
-				var data map[string]interface{}
-				if err := json.Unmarshal([]byte(body), &data); err == nil {
-					logf(ctx, "[auth-retriever] Parsed JSON response, keys: %v", getMapKeys(data))
-					if tokenVal := getNestedValue(data, tokenPath); tokenVal != nil {
-						if token, ok := tokenVal.(string); ok && token != "" {
-							logf(ctx, "[auth-retriever] Captured auth token from %s %s", ctx.Request.Method, ctx.Request.URL)
-							// Store captured token in environment
-							if ctx.Environment == nil {
-								ctx.Environment = make(map[string]string)
-							}
-							ctx.Environment["auth_token"] = token
-							logf(ctx, "[auth-retriever] Stored token in environment: %s", token)
-						} else {
-							logf(ctx, "[auth-retriever] Token at path '%s' is not a string or empty, type: %T, value: %v", tokenPath, tokenVal, tokenVal)
+		if statusCode == 200 && body != "" {
+			logf(ctx, "[auth-retriever] Processing auth response from %s %s (status %d), body length: %d", ctx.Request.Method, ctx.Request.URL, statusCode, len(body))
+			// Try to parse JSON response
+			var data map[string]interface{}
+			if err := json.Unmarshal([]byte(body), &data); err == nil {
+				logf(ctx, "[auth-retriever] Parsed JSON response, keys: %v", getMapKeys(data))
+				if tokenVal := getNestedValue(data, tokenPath); tokenVal != nil {
+					if token, ok := tokenVal.(string); ok && token != "" {
+						logf(ctx, "[auth-retriever] Captured auth token from %s %s", ctx.Request.Method, ctx.Request.URL)
+						// Store captured token in environment
+						if ctx.Environment == nil {
+							ctx.Environment = make(map[string]string)
 						}
+						ctx.Environment["auth_token"] = token
+						logf(ctx, "[auth-retriever] Stored token in environment: %s", token)
 					} else {
-						logf(ctx, "[auth-retriever] No token found at path '%s' in response, available keys: %v", tokenPath, getMapKeys(data))
+						logf(ctx, "[auth-retriever] Token at path '%s' is not a string or empty, type: %T, value: %v", tokenPath, tokenVal, tokenVal)
 					}
 				} else {
-					logf(ctx, "[auth-retriever] Failed to unmarshal JSON response: %v", err)
-					logf(ctx, "[auth-retriever] Response body preview: %.200s", body)
+					logf(ctx, "[auth-retriever] No token found at path '%s' in response, available keys: %v", tokenPath, getMapKeys(data))
 				}
 			} else {
-				logf(ctx, "[auth-retriever] Response status not 200 or body empty: status=%d, bodyLen=%d", statusCode, len(body))
+				logf(ctx, "[auth-retriever] Failed to unmarshal JSON response: %v", err)
+				logf(ctx, "[auth-retriever] Response body preview: %.200s", body)
 			}
 		} else {
-			logf(ctx, "[auth-retriever] Response is not a valid struct")
+			logf(ctx, "[auth-retriever] Response status not 200 or body empty: status=%d, bodyLen=%d", statusCode, len(body))
 		}
 	} else {
 		logf(ctx, "[auth-retriever] Response is nil")
@@ -195,5 +176,12 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 	return nil
 }
 
-// Plugin is the exported plugin instance
-var Plugin types.Plugin = &AuthRetriever{}
+func main() {
+	plugin.Serve(&plugin.ServeConfig{
+		HandshakeConfig: shared.Handshake,
+		Plugins: map[string]plugin.Plugin{
+			"auth-retriever": &shared.PetitoriumPlugin{Impl: &AuthRetriever{}},
+		},
+		GRPCServer: plugin.DefaultGRPCServer,
+	})
+}
