@@ -30,13 +30,13 @@ cd petitorium-plugin-auth-retriever
 2. Build the plugin:
 
 ```bash
-go build -buildmode=plugin -o auth-retriever.so .
+go build -o auth-retriever .
 ```
 
 3. Copy the plugin to your Petitorium plugins directory:
 
 ```bash
-cp auth-retriever.so ~/.config/petitorium/plugins/
+cp auth-retriever ~/.config/petitorium/plugins/
 ```
 
 ## Configuration
@@ -49,10 +49,16 @@ plugins:
     - auth-retriever
   config:
     auth-retriever:
-      auth_url_pattern: 'login' # Optional: URL pattern for auth endpoints (default: "login")
-      token_path: 'token' # Optional: JSON path to extract token (default: "token")
-      logging_enabled: false # Optional: enable logging (default: false)
-      log_file: '~/auth-retriever.log' # Optional: log file path (default: "auth-retriever.log")
+      auth_url_pattern: 'login' # Optional: global URL pattern for auth endpoints (default: "login")
+      token_path: 'token' # Optional: global JSON path to extract token (default: "token")
+      logging_enabled: false # Optional: global enable logging (default: false)
+      log_file: '~/auth-retriever.log' # Optional: global log file path (default: "auth-retriever.log")
+      workspaces: # Optional: workspace-specific overrides
+        "My Workspace Name":
+          auth_url_pattern: 'api/v1/auth'
+          token_path: 'data.token'
+          logging_enabled: true
+          log_file: '~/my-workspace-auth.log'
 ```
 
 ### Configuration Options
@@ -63,6 +69,7 @@ plugins:
 | `token_path`       | string  | `"token"`              | JSON path for token extraction from responses    |
 | `logging_enabled`  | boolean | `false`                | Enable/disable logging                           |
 | `log_file`         | string  | `"auth-retriever.log"` | Path to the log file                             |
+| `workspaces`       | object  | `null`                 | Map of workspace names to specific overrides     |
 
 ## Usage
 
@@ -111,7 +118,7 @@ petitorium-plugin-auth-retriever/
 go mod tidy
 
 # Build the plugin
-go build -buildmode=plugin -o auth-retriever.so .
+go build -o auth-retriever .
 
 # Run tests (if any)
 go test ./...
@@ -119,20 +126,21 @@ go test ./...
 
 ### Plugin Architecture
 
-The plugin follows Petitorium's plugin architecture:
+The plugin follows Petitorium's plugin architecture (using HashiCorp go-plugin):
 
-1. **Main Plugin**: Implements the `Plugin` interface and provides hook functions
-2. **Hook Functions**: Process responses at the PostReceive stage
-3. **Configuration**: Accepts configuration through the HookContext
+1. **SDK Imports**: Uses `github.com/petitorium/petitorium-plugin-sdk`
+2. **Main Plugin**: Implements the `types.Plugin` interface and provides hook functions via `ExecuteHook`
+3. **gRPC Server**: Runs a local gRPC server via `plugin.Serve()` for communication with Petitorium
 4. **Environment Integration**: Stores tokens in environment variables for flexible usage
 
 ## Troubleshooting
 
 ### Plugin Not Loading
 
-1. Verify the plugin file exists: `ls -la ~/.config/petitorium/plugins/auth-retriever.so`
-2. Check Petitorium logs for plugin loading errors
-3. Ensure the plugin is enabled in your configuration
+1. Verify the plugin executable exists: `ls -la ~/.config/petitorium/plugins/auth-retriever`
+2. Ensure the file has execution permissions: `chmod +x ~/.config/petitorium/plugins/auth-retriever`
+3. Check Petitorium logs for plugin loading errors
+4. Ensure the plugin is enabled in your configuration
 
 ### Authentication Not Working
 
@@ -171,8 +179,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Related Projects
 
 - [Petitorium](https://github.com/petitorium/petitorium) - The main API client application
-- [Petitorium Auth Injector Plugin](https://github.com/petitorium/petitorium-plugin-auth-injector) - Authentication injection plugin
-- [Petitorium Request Logger Plugin](https://github.com/petitorium/petitorium-plugin-request-logger) - Request/response logging plugin
+- [Petitorium Auth Injector Plugin](https://github.com/petitorium/petitorium-plugin-auth-injector) - An authentication injection plugin for [Petitorium](https://github.com/petitorium/petitorium) that automatically injects authentication headers into HTTP requests and captures authentication tokens from responses.
+- [Petitorium Request Logger Plugin](https://github.com/petitorium/petitorium-plugin-request-logger) - A comprehensive request and response logging plugin for [Petitorium](https://github.com/petitorium/petitorium) that provides detailed logging of HTTP requests and responses with support for both raw template variables and expanded environment variables.
 
 ## Support
 

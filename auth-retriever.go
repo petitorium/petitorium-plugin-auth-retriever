@@ -1,5 +1,6 @@
 // Package main provides an example auth retriever plugin.
-// To build: go build -buildmode=plugin -o auth-retriever.so .
+// To build: go build -o auth-retriever .
+// For cross-compilation: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o auth-retriever .
 package main
 
 import (
@@ -19,15 +20,34 @@ func logf(ctx *types.HookContext, format string, args ...interface{}) {
 	// Check if logging is enabled in config
 	if ctx.Config != nil {
 		if pluginConfig, ok := ctx.Config["auth-retriever"].(map[string]interface{}); ok {
-			// Check if logging is enabled, default to false
-			if enabled, exists := pluginConfig["logging_enabled"].(bool); !exists || !enabled {
-				return
+			// Global fallbacks
+			loggingEnabled := false
+			if enabled, exists := pluginConfig["logging_enabled"].(bool); exists {
+				loggingEnabled = enabled
 			}
 
-			// Get log file path, default to "auth-retriever.log"
 			logFile := "auth-retriever.log"
 			if filePath, exists := pluginConfig["log_file"].(string); exists && filePath != "" {
 				logFile = filePath
+			}
+
+			// Workspace specific overrides
+			if ctx.Workspace != "" {
+				if workspacesConfig, ok := pluginConfig["workspaces"].(map[string]interface{}); ok {
+					workspaceKey := strings.ToLower(ctx.Workspace)
+					if wsConfig, ok := workspacesConfig[workspaceKey].(map[string]interface{}); ok {
+						if enabled, exists := wsConfig["logging_enabled"].(bool); exists {
+							loggingEnabled = enabled
+						}
+						if filePath, exists := wsConfig["log_file"].(string); exists && filePath != "" {
+							logFile = filePath
+						}
+					}
+				}
+			}
+
+			if !loggingEnabled {
+				return
 			}
 
 			file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -108,11 +128,35 @@ func (ar *AuthRetriever) ExecuteHook(hookType types.HookType, ctx *types.HookCon
 func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 	// Get auth URL pattern from config, default to "login"
 	authURLPattern := "login"
+	// Get token path from config, default to "token"
+	tokenPath := "token"
+
 	if ctx.Config != nil {
 		if pluginConfig, ok := ctx.Config["auth-retriever"].(map[string]interface{}); ok {
 			logf(ctx, "[auth-retriever] Found plugin config: %v", pluginConfig)
+
+			// Global fallbacks
 			if pattern, exists := pluginConfig["auth_url_pattern"].(string); exists && pattern != "" {
 				authURLPattern = pattern
+			}
+			if path, exists := pluginConfig["token_path"].(string); exists && path != "" {
+				tokenPath = path
+			}
+
+			// Workspace specific overrides
+			if ctx.Workspace != "" {
+				if workspacesConfig, ok := pluginConfig["workspaces"].(map[string]interface{}); ok {
+					workspaceKey := strings.ToLower(ctx.Workspace)
+					if wsConfig, ok := workspacesConfig[workspaceKey].(map[string]interface{}); ok {
+						logf(ctx, "[auth-retriever] Found workspace config for '%s': %v", ctx.Workspace, wsConfig)
+						if pattern, exists := wsConfig["auth_url_pattern"].(string); exists && pattern != "" {
+							authURLPattern = pattern
+						}
+						if path, exists := wsConfig["token_path"].(string); exists && path != "" {
+							tokenPath = path
+						}
+					}
+				}
 			}
 		} else {
 			logf(ctx, "[auth-retriever] No plugin config found for 'auth-retriever', config keys: %v", getMapKeys(ctx.Config))
@@ -121,19 +165,12 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 		logf(ctx, "[auth-retriever] Config is nil")
 	}
 	logf(ctx, "[auth-retriever] Using auth_url_pattern: %s", authURLPattern)
+	logf(ctx, "[auth-retriever] Using token_path: %s", tokenPath)
 
 	// Check if this is an auth request (URL contains the pattern)
 	if !strings.Contains(strings.ToLower(ctx.Request.URL), strings.ToLower(authURLPattern)) {
 		logf(ctx, "[auth-retriever] Skipping token capture for %s %s (no match for pattern '%s')", ctx.Request.Method, ctx.Request.URL, authURLPattern)
 		return nil
-	}
-
-	// Get token path from config, default to "token"
-	tokenPath := "token"
-	if pluginConfig, ok := ctx.Config["auth-retriever"].(map[string]interface{}); ok {
-		if path, exists := pluginConfig["token_path"].(string); exists && path != "" {
-			tokenPath = path
-		}
 	}
 
 	// Check if response is successful
