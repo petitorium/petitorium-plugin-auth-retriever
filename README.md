@@ -5,7 +5,7 @@ An authentication retrieval plugin for [Petitorium](https://github.com/petitoriu
 ## Features
 
 - **Token Capture**: Automatically extracts authentication tokens from login responses
-- **Environment Variable Storage**: Stores captured tokens in environment variables for user-defined usage
+- **Environment Variable Storage**: Stores captured tokens in configurable environment variables for user-defined usage
 - **Configurable Token Paths**: Flexible JSON path configuration for token extraction
 - **URL Pattern Matching**: Configurable patterns to identify authentication endpoints
 - **Optional Logging**: Configurable logging with custom log file locations
@@ -51,12 +51,14 @@ plugins:
     auth-retriever:
       auth_url_pattern: 'login' # Optional: global URL pattern for auth endpoints (default: "login")
       token_path: 'token' # Optional: global JSON path to extract token (default: "token")
+      env_var_name: 'auth_token' # Optional: global env var name to store token in (default: "auth_token")
       logging_enabled: false # Optional: global enable logging (default: false)
       log_file: '~/auth-retriever.log' # Optional: global log file path (default: "auth-retriever.log")
       workspaces: # Optional: workspace-specific overrides
         "My Workspace Name":
           auth_url_pattern: 'api/v1/auth'
           token_path: 'data.token'
+          env_var_name: 'my_custom_token'
           logging_enabled: true
           log_file: '~/my-workspace-auth.log'
 ```
@@ -67,6 +69,7 @@ plugins:
 | ------------------ | ------- | ---------------------- | ------------------------------------------------ |
 | `auth_url_pattern` | string  | `"login"`              | URL pattern to identify authentication endpoints |
 | `token_path`       | string  | `"token"`              | JSON path for token extraction from responses    |
+| `env_var_name`     | string  | `"auth_token"`         | Environment variable name to store the token in  |
 | `logging_enabled`  | boolean | `false`                | Enable/disable logging                           |
 | `log_file`         | string  | `"auth-retriever.log"` | Path to the log file                             |
 | `workspaces`       | object  | `null`                 | Map of workspace names to specific overrides     |
@@ -82,7 +85,7 @@ Once installed and configured, the plugin automatically:
 
 1. Plugin identifies authentication requests by URL pattern matching
 2. On successful responses (HTTP 200), extracts token from JSON response
-3. Stores extracted token in environment variables (`auth_token`) for user-defined usage
+3. Stores extracted token in a configurable environment variable (default: `auth_token`) for user-defined usage
 
 ### Example Log Output (when logging enabled)
 

@@ -130,6 +130,8 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 	authURLPattern := "login"
 	// Get token path from config, default to "token"
 	tokenPath := "token"
+	// Get env var name from config, default to "auth_token"
+	envVarName := "auth_token"
 
 	if ctx.Config != nil {
 		if pluginConfig, ok := ctx.Config["auth-retriever"].(map[string]interface{}); ok {
@@ -141,6 +143,9 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 			}
 			if path, exists := pluginConfig["token_path"].(string); exists && path != "" {
 				tokenPath = path
+			}
+			if name, exists := pluginConfig["env_var_name"].(string); exists && name != "" {
+				envVarName = name
 			}
 
 			// Workspace specific overrides
@@ -155,6 +160,9 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 						if path, exists := wsConfig["token_path"].(string); exists && path != "" {
 							tokenPath = path
 						}
+						if name, exists := wsConfig["env_var_name"].(string); exists && name != "" {
+							envVarName = name
+						}
 					}
 				}
 			}
@@ -166,6 +174,7 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 	}
 	logf(ctx, "[auth-retriever] Using auth_url_pattern: %s", authURLPattern)
 	logf(ctx, "[auth-retriever] Using token_path: %s", tokenPath)
+	logf(ctx, "[auth-retriever] Using env_var_name: %s", envVarName)
 
 	// Check if this is an auth request (URL contains the pattern)
 	if !strings.Contains(strings.ToLower(ctx.Request.URL), strings.ToLower(authURLPattern)) {
@@ -191,8 +200,8 @@ func (ar *AuthRetriever) captureAuth(ctx *types.HookContext) error {
 						if ctx.Environment == nil {
 							ctx.Environment = make(map[string]string)
 						}
-						ctx.Environment["auth_token"] = token
-						logf(ctx, "[auth-retriever] Stored token in environment: %s", token)
+						ctx.Environment[envVarName] = token
+						logf(ctx, "[auth-retriever] Stored token in environment['%s']: %s", envVarName, token)
 					} else {
 						logf(ctx, "[auth-retriever] Token at path '%s' is not a string or empty, type: %T, value: %v", tokenPath, tokenVal, tokenVal)
 					}
