@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/hashicorp/go-plugin v1.7.0
-	github.com/petitorium/petitorium-plugin-sdk v1.3.0
+	github.com/petitorium/petitorium-plugin-sdk v1.5.0
 )
 
 require (
